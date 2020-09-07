@@ -1,0 +1,7 @@
+--- 05 Sept 2020 ---
+
+> Learn about Estimator in TF.
+> Work on model.py
+
+1. Completed data.py haven't checked it.
+2. Completed train.py haven't checked it.
