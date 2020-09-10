@@ -8,16 +8,17 @@ from src.params import Params
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--params_dir', default='hyperparameters/batch_hard',
+parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
                     help="Experiment directory containing params.json")
-parser.add_argument('--data_dir', default='lfw-dataset',
+parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data',
                     help="Directory containing the dataset")
 
 if __name__ == '__main__':
-    tf.reset_default_graph()
-    tf.logging.set_verbosity(tf.logging.INFO)
+#     tf.reset_default_graph()
+#     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Load the parameters from json file
     args = parser.parse_args()
@@ -26,14 +27,14 @@ if __name__ == '__main__':
     params = Params(json_path)
 
     # Define the model
-    tf.logging.info("Creating the model...")
+    tf.print("Creating the model...")
     config = tf.estimator.RunConfig(tf_random_seed=230,
                                     model_dir=args.params_dir,
                                     save_summary_steps=params.save_summary_steps)
     estimator = tf.estimator.Estimator(inception_v3_model_fn, params=params, config=config)
 
     # Train the model
-    tf.logging.info("Starting training for {} epoch(s).".format(params.num_epochs))
+    tf.print("Starting training for {} epoch(s).".format(params.num_epochs))
     estimator.train(lambda: get_dataset(args.data_dir, params, 'train'))
 
     # Evaluate the model on the test set

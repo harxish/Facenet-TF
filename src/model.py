@@ -2,21 +2,26 @@ import tensorflow as tf
 import tensorflow_hub as hub
 import numpy as np
 
-from model.triplet_loss import batch_all_triplet_loss
-from model.triplet_loss import batch_hard_triplet_loss
+from src.triplet_loss import batch_all_triplet_loss
+from src.triplet_loss import batch_hard_triplet_loss
 
-tf.logging.set_verbosity(tf.logging.INFO)
+# tf.logging.set_verbosity(tf.logging.INFO)
+
 
 def adjust_image(images, params):
     images = tf.reshape(images,[-1, params.image_size, params.image_size, 3])
-    images = tf.image.resize_images(images, (299, 299, 3))
+    images = tf.image.resize(images, (299, 299))
+    images = tf.image.random_flip_left_right(images)
+#     images /= 255.0
     return images
 
 
 
 def inception_v3_model_fn(features, labels, mode, params):
     
+    print(f"features : {features}")
     images = features
+    print(features)
     assert images.shape[1:] == [params.image_size, params.image_size, 3], "{}".format(images.shape)    
     
     #MODEL: Download Inception v3 module for transfer learning
@@ -25,12 +30,9 @@ def inception_v3_model_fn(features, labels, mode, params):
     #Adjust images to module input shape [299,299,3]
     input_layer = adjust_image(images, params)
     out = module(input_layer)
-    
-    #Compute embeddings with the model
-    with tf.variable_scope('model'):
-        embeddings=tf.layers.dense(inputs=out,units=params.embedding_size)
-    
+    embeddings=tf.keras.layers.Dense(units=params.embedding_size)(out)
     embedding_mean_norm = tf.reduce_mean(tf.norm(embeddings, axis=1))
+    
     tf.summary.scalar("embedding_mean_norm", embedding_mean_norm)    
     
     #PREDICT
@@ -52,12 +54,11 @@ def inception_v3_model_fn(features, labels, mode, params):
         
     # EVALUATE    
     # METRICS for evaluation: Use average over whole dataset
-    with tf.variable_scope("metrics"):
-        eval_metrics_ops = {"embedding_mean_norm": tf.metrics.mean(embedding_mean_norm)}
+    eval_metrics_ops = {"embedding_mean_norm": tf.keras.metrics.Mean(embedding_mean_norm)}
+    
+    if params.triplet_strategy == "batch_all":
+        eval_metric_ops['fraction_positive_triplets'] = tf.keras.metrics.Mean(fraction)
         
-        if params.triplet_strategy == "batch_all":
-            eval_metric_ops['fraction_positive_triplets'] = tf.metrics.mean(fraction)
-            
             
     if mode == tf.estimator.Modekeys.EVAL:
         return tf.estimator.EstimatorSpec(mode, loss=loss, eval_metric_ops=eval_metric_ops)
