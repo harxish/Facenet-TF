@@ -1,3 +1,11 @@
+--- 10 Sept 2020 ---
+
+> 
+
+1. added image_size from params to data.py and it works.
+2. created face_model in model.py 
+
+
 --- 09 Sept 2020 ---
 
 > Check data.py

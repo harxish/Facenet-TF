@@ -3,6 +3,9 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+
 '''
 Create tf.data.Dataset from TFRecords from a directory of TFRecords.
 Preprocess Images : Resize, Flip, Normalize
@@ -38,16 +41,16 @@ def get_dataset(tfrcd_dir, params, phase='train'):
     if phase == 'train':
         df = pd.read_csv(os.path.join(tfrcd_dir,'info.csv'))
         nrof_samples = df['train_num'][0]
-    
+        
     elif phase == 'val':
         df = pd.read_csv(os.path.join(tfrcd_dir,'info.csv'))
         nrof_samples = df['val_num'][0]
-    
+      
     file_paths =  os.listdir(os.path.join(tfrcd_dir, phase))
     file_paths =  [os.path.join(tfrcd_dir, phase, file_path)for file_path in file_paths]
     AUTOTUNE   =  tf.data.experimental.AUTOTUNE
     dataset    =  tf.data.TFRecordDataset(file_paths)
-    dataset    =  dataset.map(lambda x : parse_image_function(x, params.image_size))
-    dataset    =  dataset.batch(params.batch_size).prefetch(AUTOTUNE)
+    dataset    =  dataset.map(lambda x: parse_image_function(x, params.image_size))
+    dataset    =  dataset.batch(32).prefetch(AUTOTUNE)
     
-    return dataset
+    return dataset, nrof_samples
