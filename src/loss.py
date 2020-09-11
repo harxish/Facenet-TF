@@ -125,7 +125,6 @@ def batch_all_triplet_loss(labels, embeddings, margin=100, squared=False):
     """
     # Get the pairwise distance matrix
     pairwise_dist = _pairwise_distances(embeddings, squared=squared)
-    print(tf.reduce_any(pairwise_dist > 1))
     # shape (batch_size, batch_size, 1)
     anchor_positive_dist = tf.expand_dims(pairwise_dist, 2)
     assert anchor_positive_dist.shape[2] == 1, "{}".format(anchor_positive_dist.shape)

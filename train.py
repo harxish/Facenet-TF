@@ -2,6 +2,7 @@ import os
 import argparse
 import tensorflow as tf
 from tqdm import tqdm
+from progressbar import *
 
 from src.params import Params
 from src.data import get_dataset
@@ -11,7 +12,7 @@ from src.loss import batch_hard_triplet_loss
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
@@ -34,16 +35,13 @@ class Trainer():
         
         
     def train(self, epoch):
-#         widgets = ['train :', Percentage(), ' ', Bar('#'), ' ',Timer(), ' ', ETA(), ' ']
-#         pbar = ProgressBar(widgets=widgets, max_value=int(self.nrof_samples//self.params.batch_size)+1).start()
+        widgets = ['train :', Percentage(), ' ', Bar('#'), ' ',Timer(), ' ', ETA(), ' ']
+        pbar = ProgressBar(widgets=widgets, max_value=int(self.nrof_samples//self.params.batch_size)+1).start()
         total_loss = 0
 
-        for _, (images, labels) in tqdm(enumerate(self.dataset)):
+        for _, (images, labels) in pbar(enumerate(self.dataset)):
             loss = self.train_step(images, labels)
-            print(loss)
             total_loss += loss
-            
-#         pbar.finish()
         
         print('\nLoss over epoch {}: {}\n'.format(epoch, total_loss))
 
@@ -65,9 +63,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data',
+    parser.add_argument('--data_dir', default='/root/shared_folder/Harish/Facenet/data',
                         help="Directory containing the dataset")
     args = parser.parse_args()
     
     trainer = Trainer(args.params_dir, args.data_dir)
-    trainer.train(1)
+    
+    for i in range(10):
+        trainer.train(i)

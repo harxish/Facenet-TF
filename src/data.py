@@ -51,6 +51,6 @@ def get_dataset(tfrcd_dir, params, phase='train'):
     AUTOTUNE   =  tf.data.experimental.AUTOTUNE
     dataset    =  tf.data.TFRecordDataset(file_paths)
     dataset    =  dataset.map(lambda x: parse_image_function(x, params.image_size))
-    dataset    =  dataset.batch(32).prefetch(AUTOTUNE)
+    dataset    =  dataset.batch(params.batch_size).prefetch(AUTOTUNE)
     
     return dataset, nrof_samples
