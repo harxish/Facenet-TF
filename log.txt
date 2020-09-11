@@ -1,8 +1,10 @@
 --- 11 Sept 2020 ---
 
-> 
+> Check for convergence
 
 1. Trainer works. Loss is decreasing finally.
+2. Added checkpoints and summary writer.
+
 
 --- 10 Sept 2020 ---
 
