@@ -9,8 +9,21 @@ Facenet implementation using Tensorflow 2.x
 4. __src/model.py__  : Creates model class which gives embeddings from a image.
 5. __src/params.py__ : Creates paramters class from a json in the hyperparameters directory.
 
+### Acknowlegments
+
+ - [Face-Recognition-Triplet-Loss-on-Inception-v3](https://github.com/rishiraj95/Face-Recognition-Triplet-Loss-on-Inception-v3)  - Clean and well documented implementation of Triplet loss implementation.
+ - [Face Recognition using Tensorflow](https://github.com/davidsandberg/facenet) - The evaluation script on LFW is used and modified to use TF2. Ideas from the documentation and code are also used.
+
 ### References
-<a id="arXiv:1503.03832">[1]</a> 
-Schroff, Florian, Dmitry Kalenichenko, and James Philbin. 
-“FaceNet: A Unified Embedding for Face Recognition and Clustering.” 
-2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (2015): n. pag. Crossref. Web.
+
+    @article{Schroff_2015,
+       title={FaceNet: A unified embedding for face recognition and clustering},
+       ISBN={9781467369640},
+       url={http://dx.doi.org/10.1109/CVPR.2015.7298682},
+       DOI={10.1109/cvpr.2015.7298682},
+       journal={2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+       publisher={IEEE},
+       author={Schroff, Florian and Kalenichenko, Dmitry and Philbin, James},
+       year={2015},
+       month={Jun}
+    }
