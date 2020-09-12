@@ -9,6 +9,14 @@ Facenet implementation using Tensorflow 2.x
 4. __src/model.py__  : Creates model class which gives embeddings from a image.
 5. __src/params.py__ : Creates paramters class from a json in the hyperparameters directory.
 
+### Code
+
+Train from scratch
+```
+python train.py --params_dir ./hyperparameters/batch_all.json --data_dir ./data/ 
+                --log_dir ./.logs/ --ckpt_dir ./.ckpt/ --restore 0
+```
+
 ### Acknowlegments
 
  - [Face-Recognition-Triplet-Loss-on-Inception-v3](https://github.com/rishiraj95/Face-Recognition-Triplet-Loss-on-Inception-v3)  - Clean and well documented implementation of Triplet loss implementation.
