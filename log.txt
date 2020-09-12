@@ -1,5 +1,6 @@
 --- 11 Sept 2020 ---
 
+> Check loss.py
 > Check for convergence
 
 1. Trainer works. Loss is decreasing finally.

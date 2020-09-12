@@ -87,7 +87,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Harish/Facenet/data',
+    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2',
                         help="Directory containing the dataset")
     parser.add_argument('--ckpt_dir', default='/root/shared_folder/Harish/Facenet-x/.tf_ckpt/',
                         help="Directory containing the Checkpoints")
