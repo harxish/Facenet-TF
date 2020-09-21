@@ -1,208 +1,230 @@
-"""Define functions to create the triplet loss with online triplet mining."""
-
+import math
+import numpy as np
 import tensorflow as tf
 
-
-def _pairwise_distances(embeddings, squared=False):
-    """Compute the 2D matrix of distances between all the embeddings.
-    Args:
-        embeddings: tensor of shape (batch_size, embed_dim)
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
-    Returns:
-        pairwise_distances: tensor of shape (batch_size, batch_size)
-    """
-    # Get the dot product between all embeddings
-    # shape (batch_size, batch_size)
-    dot_product = tf.matmul(embeddings, tf.transpose(embeddings))
-
-    # Get squared L2 norm for each embedding. We can just take the diagonal of `dot_product`.
-    # This also provides more numerical stability (the diagonal of the result will be exactly 0).
-    # shape (batch_size,)
-    square_norm = tf.linalg.diag_part(dot_product)
-
-    # Compute the pairwise distance matrix as we have:
-    # ||a - b||^2 = ||a||^2  - 2 <a, b> + ||b||^2
-    # shape (batch_size, batch_size)
-    distances = tf.expand_dims(square_norm, 1) - 2.0 * dot_product + tf.expand_dims(square_norm, 0)
-
-    # Because of computation errors, some distances might be negative so we put everything >= 0.0
-    distances = tf.maximum(distances, 0.0)
-
-    if not squared:
-        # Because the gradient of sqrt is infinite when distances == 0.0 (ex: on the diagonal)
-        # we need to add a small epsilon where distances == 0.0
-        mask = tf.cast(tf.equal(distances, 0.0), dtype=tf.float32)
-        distances = distances + mask * 1e-16
-
-        distances = tf.sqrt(distances)
-
-        # Correct the epsilon added: set the distances on the mask to be exactly 0.0
-        distances = distances * (1.0 - mask)
-
-    return distances
+from tensorflow.python.keras import layers
+from tensorflow.python.keras import losses
 
 
-def _get_anchor_positive_triplet_mask(labels):
-    """Return a 2D mask where mask[a, p] is True iff a and p are distinct and have same label.
-    Args:
-        labels: tf.int32 `Tensor` with shape [batch_size]
-    Returns:
-        mask: tf.bool `Tensor` with shape [batch_size, batch_size]
-    """
-    # Check that i and j are distinct
-    indices_equal = tf.cast(tf.eye(tf.shape(labels)[0]), tf.bool)
-    indices_not_equal = tf.logical_not(indices_equal)
+class OriginalSoftmaxLinear(layers.Layer):
+    def __init__(self, units):
+        super(OriginalSoftmaxLinear, self).__init__()
+        self.fc=layers.Dense(units)
 
-    # Check if labels[i] == labels[j]
-    # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
-    labels_equal = tf.equal(tf.expand_dims(labels, 0), tf.expand_dims(labels, 1))
-
-    # Combine the two masks
-    mask = tf.logical_and(indices_not_equal, labels_equal)
-
-    return mask
+    def call(self, embedding, labels):
+        logits = self.fc(embedding)
+        return logits
 
 
-def _get_anchor_negative_triplet_mask(labels):
-    """Return a 2D mask where mask[a, n] is True iff a and n have distinct labels.
-    Args:
-        labels: tf.int32 `Tensor` with shape [batch_size]
-    Returns:
-        mask: tf.bool `Tensor` with shape [batch_size, batch_size]
-    """
-    # Check if labels[i] != labels[k]
-    # Uses broadcasting where the 1st argument has shape (1, batch_size) and the 2nd (batch_size, 1)
-    labels_equal = tf.equal(tf.expand_dims(labels, 0), tf.expand_dims(labels, 1))
+#Large-Margin Softmax Loss was proposed by paper(https://arxiv.org/abs/1612.02295)
+class LSoftmaxLinear(layers.Layer):
+    def __init__(self, units, input_dim, margin):
+        super(LSoftmaxLinear, self).__init__()
+        self.m = margin
 
-    mask = tf.logical_not(labels_equal)
+        '''
+        CosMThetaCalculator is used for calculate cos(m*theta) given 
+        cos(theta). Original paper give the calculate method. But not
+        used here for the sake of saving computation.Instead here first
+        get theta by theta=tf.math.acos(cos(theate))and then 
+        cos(m*theta)=tf.math.cos(m*theta).
+        '''
+        self.beta = 1000
+        self.beta_min = 0
+        self.decay = 0.99
+        self.divisor = math.pi / self.m  # pi/m
+        # Initialize L-Softmax parameters
+        self.weight = self.add_weight(shape=(input_dim, units),
+                                      initializer='he_normal',
+                                      trainable=True)
 
-    return mask
+    def find_k(self, cos_theta):
+        eps = 1e-7
+        cos_theta = tf.clip_by_value(cos_theta, -1 + eps, 1 - eps)
+        acos = tf.math.acos(cos_theta)
+        k = tf.math.floordiv(acos, self.divisor)
+        return k
 
-
-def _get_triplet_mask(labels):
-    """Return a 3D mask where mask[a, p, n] is True iff the triplet (a, p, n) is valid.
-    A triplet (i, j, k) is valid if:
-        - i, j, k are distinct
-        - labels[i] == labels[j] and labels[i] != labels[k]
-    Args:
-        labels: tf.int32 `Tensor` with shape [batch_size]
-    """
-    # Check that i, j and k are distinct
-    indices_equal = tf.cast(tf.eye(tf.shape(labels)[0]), tf.bool)
-    indices_not_equal = tf.logical_not(indices_equal)
-    i_not_equal_j = tf.expand_dims(indices_not_equal, 2)
-    i_not_equal_k = tf.expand_dims(indices_not_equal, 1)
-    j_not_equal_k = tf.expand_dims(indices_not_equal, 0)
-
-    distinct_indices = tf.logical_and(tf.logical_and(i_not_equal_j, i_not_equal_k), j_not_equal_k)
-
-
-    # Check if labels[i] == labels[j] and labels[i] != labels[k]
-    label_equal = tf.equal(tf.expand_dims(labels, 0), tf.expand_dims(labels, 1))
-    i_equal_j = tf.expand_dims(label_equal, 2)
-    i_equal_k = tf.expand_dims(label_equal, 1)
-
-    valid_labels = tf.logical_and(i_equal_j, tf.logical_not(i_equal_k))
-
-    # Combine the two masks
-    mask = tf.logical_and(distinct_indices, valid_labels)
-
-    return mask
+    def call(self, embedding, labels):
+        x, w = embedding, self.weight
+        w_norm = tf.norm(w, ord='euclidean', axis=0)
+        x_norm = tf.norm(x, ord='euclidean', axis=1)
+        logits = tf.matmul(x, w)
+        indices_m = tf.expand_dims(tf.Variable(range(embedding.shape[0])), axis=1)
+        indices_n = tf.expand_dims(labels, axis=1)
+#         indices_n = tf.dtypes.cast(tf.int32)
+#         print(indices_m.dtype, indices_n.dtype)
+        indices = tf.concat([indices_m, indices_n], 1)
+        selected_logits = tf.gather_nd(logits, indices)
+        w_target_norm = tf.gather(w_norm, labels)
+        cos_theta_target = selected_logits / (w_target_norm*x_norm + 1e-10)
 
 
-def batch_all_triplet_loss(labels, embeddings, margin=100, squared=False):
-    """Build the triplet loss over a batch of embeddings.
-    We generate all the valid triplets and average the loss over the positive ones.
-    Args:
-        labels: labels of the batch, of size (batch_size,)
-        embeddings: tensor of shape (batch_size, embed_dim)
-        margin: margin for triplet loss
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
-    Returns:
-        triplet_loss: scalar tensor containing the triplet loss
-    """
-    # Get the pairwise distance matrix
-    pairwise_dist = _pairwise_distances(embeddings, squared=squared)
-    # shape (batch_size, batch_size, 1)
-    anchor_positive_dist = tf.expand_dims(pairwise_dist, 2)
-    assert anchor_positive_dist.shape[2] == 1, "{}".format(anchor_positive_dist.shape)
-    # shape (batch_size, 1, batch_size)
-    anchor_negative_dist = tf.expand_dims(pairwise_dist, 1)
-    assert anchor_negative_dist.shape[1] == 1, "{}".format(anchor_negative_dist.shape)
+        # cos_m_theta_target=self.cos_m_calculator(cos_theta_target)
 
-    # Compute a 3D tensor of size (batch_size, batch_size, batch_size)
-    # triplet_loss[i, j, k] will contain the triplet loss of anchor=i, positive=j, negative=k
-    # Uses broadcasting where the 1st argument has shape (batch_size, batch_size, 1)
-    # and the 2nd (batch_size, 1, batch_size)
-    triplet_loss = anchor_positive_dist - anchor_negative_dist + margin
+        theta_m=self.m*tf.math.acos(cos_theta_target)
+        cos_m_theta_target=tf.math.cos(theta_m)
+        k = self.find_k(cos_theta_target)
+        logit_target_updated = (w_target_norm *
+                                x_norm *
+                                (((-1) ** k * cos_m_theta_target) - 2 * k))
 
-    # Put to zero the invalid triplets
-    # (where label(a) != label(p) or label(n) == label(a) or a == p)
-    mask = _get_triplet_mask(labels)
-    mask = tf.cast(mask, dtype=tf.float32)
-    triplet_loss = tf.multiply(mask, triplet_loss)
-
-    # Remove negative losses (i.e. the easy triplets)
-    triplet_loss = tf.maximum(triplet_loss, 0.0)
-
-    # Count number of positive triplets (where triplet_loss > 0)
-    valid_triplets = tf.cast(tf.greater(triplet_loss, 1e-16), dtype=tf.float32)
-    num_positive_triplets = tf.reduce_sum(valid_triplets)
-    num_valid_triplets = tf.reduce_sum(mask)
-    fraction_positive_triplets = num_positive_triplets / (num_valid_triplets + 1e-16)
-
-    # Get final mean triplet loss over the positive valid triplets
-    triplet_loss = tf.reduce_sum(triplet_loss) / (num_positive_triplets + 1e-16)
-
-    return triplet_loss
+        beta = max(self.beta, self.beta_min)
+        logit_target_updated_beta = (logit_target_updated + beta * selected_logits) / (1 + beta)
+        self.beta *= self.decay
+        logits = tf.tensor_scatter_nd_update(logits, indices, logit_target_updated_beta)
+        return logits
 
 
-def batch_hard_triplet_loss(labels, embeddings, margin=10, squared=False):
-    """Build the triplet loss over a batch of embeddings.
-    For each anchor, we get the hardest positive and hardest negative to form a triplet.
-    Args:
-        labels: labels of the batch, of size (batch_size,)
-        embeddings: tensor of shape (batch_size, embed_dim)
-        margin: margin for triplet loss
-        squared: Boolean. If true, output is the pairwise squared euclidean distance matrix.
-                 If false, output is the pairwise euclidean distance matrix.
-    Returns:
-        triplet_loss: scalar tensor containing the triplet loss
-    """
-    # Get the pairwise distance matrix
-    pairwise_dist = _pairwise_distances(embeddings, squared=squared)
 
-    # For each anchor, get the hardest positive
-    # First, we need to get a mask for every valid positive (they should have same label)
-    mask_anchor_positive = _get_anchor_positive_triplet_mask(labels)
-    mask_anchor_positive = tf.cast(mask_anchor_positive, dtype=tf.float32)
+#Angular softmax was proposed by paper(https://arxiv.org/abs/1704.08063)
+class ASoftmaxLinear(layers.Layer):
+    def __init__(self, units, input_dim, margin, beta = 1000, beta_min=0, decay=0.99):
+        super(ASoftmaxLinear, self).__init__()
+        self.m = margin  # m
+        self.beta = beta
+        self.beta_min = beta_min
+        self.decay = decay
+        self.divisor = math.pi / self.m # pi/m
+        self.weight = self.add_weight(shape=(input_dim, units),
+                                      initializer='he_normal',
+                                      trainable=True)
 
-    # We put to 0 any element where (a, p) is not valid (valid if a != p and label(a) == label(p))
-    anchor_positive_dist = tf.multiply(mask_anchor_positive, pairwise_dist)
 
-    # shape (batch_size, 1)
-    hardest_positive_dist = tf.reduce_max(anchor_positive_dist, axis=1, keepdims=True)
-    tf.summary.scalar("hardest_positive_dist", tf.reduce_mean(hardest_positive_dist))
+    def find_k(self, cos_theta):
+        eps = 1e-7
+        cos_theta = tf.clip_by_value(cos_theta, -1 + eps, 1 - eps)
+        acos = tf.math.acos(cos_theta)
+        k = tf.math.floordiv(acos, self.divisor)
+        return k
 
-    # For each anchor, get the hardest negative
-    # First, we need to get a mask for every valid negative (they should have different labels)
-    mask_anchor_negative = _get_anchor_negative_triplet_mask(labels)
-    mask_anchor_negative = tf.cast(mask_anchor_negative, dtype=tf.float32)
+    def call(self, embedding, labels):
+        x, w = embedding, self.weight
+        w = tf.math.l2_normalize(w, axis=0)
+        x_norm = tf.norm(x, ord='euclidean', axis=1)
+        logits = tf.matmul(x, w)
+        indices_m = tf.expand_dims(tf.Variable(range(embedding.shape[0])), axis=1)
+        indices_n = tf.expand_dims(labels, axis=1)
+        indices = tf.concat([indices_m, indices_n], 1)
+        selected_logits = tf.gather_nd(logits, indices)
+        cos_theta_target = selected_logits / (1.0*x_norm + 1e-10)
+        theta_m=self.m*tf.math.acos(cos_theta_target)
+        cos_m_theta_target=tf.math.cos(theta_m)
+        k = self.find_k(cos_theta_target)
+        logit_target_updated = (1.0 *
+                                x_norm *
+                                (((-1) ** k * cos_m_theta_target) - 2 * k))
 
-    # We add the maximum value in each row to the invalid negatives (label(a) == label(n))
-    max_anchor_negative_dist = tf.reduce_max(pairwise_dist, axis=1, keepdims=True)
-    anchor_negative_dist = pairwise_dist + max_anchor_negative_dist * (1.0 - mask_anchor_negative)
+        beta = max(self.beta, self.beta_min)
+        logit_target_updated_beta = (logit_target_updated + beta * selected_logits) / (1 + beta)
+        self.beta *= self.decay
+        logits = tf.tensor_scatter_nd_update(logits, indices, logit_target_updated_beta)
+        return logits
 
-    # shape (batch_size,)
-    hardest_negative_dist = tf.reduce_min(anchor_negative_dist, axis=1, keepdims=True)
-    tf.summary.scalar("hardest_negative_dist", tf.reduce_mean(hardest_negative_dist))
 
-    # Combine biggest d(a, p) and smallest d(a, n) into final triplet loss
-    triplet_loss = tf.maximum(hardest_positive_dist - hardest_negative_dist + margin, 0.0)
+#Center Loss was proposed by paper(http://www1.ece.neu.edu/~yuewu/files/2017/twu024.pdf())
+class CenterLossLinear(layers.Layer):
+    def __init__(self, units, input_dim, alpha):
+        super(CenterLossLinear, self).__init__()
+        self.alpha = alpha
+        self.centers = tf.zeros(shape=[units, input_dim], dtype=tf.float32)
+        self.mse=losses.MeanSquaredError()
+        self.fc=layers.Dense(units)
 
-    # Get final mean triplet loss
-    triplet_loss = tf.reduce_mean(triplet_loss)
+    def call(self, embedding, labels):
+        centers_batch = tf.gather(self.centers, labels)
+        diff = (1 - self.alpha) * (centers_batch - embedding)
+        centers = tf.tensor_scatter_nd_sub(self.centers, labels, diff)
+        center_loss=self.mse(embedding,centers)
+        logits=self.fc(embedding)
+        return logits, center_loss
 
-    return triplet_loss
+
+#L2-constrained Softmax  was proposed by paper(https://arxiv.org/abs/1703.09507)
+class L2SoftmaxLinear(layers.Layer):
+    def __init__(self, units, input_dim, feature_scale=None):
+        super(L2SoftmaxLinear, self).__init__()
+        if(feature_scale!=None):
+            self.s=feature_scale
+        else:
+            exp_s=tf.math.exp(self.s)
+            self.s=tf.math.floordiv(exp_s,exp_s+units-2)
+        self.fc=layers.Dense(units)
+
+    def call(self, embedding, labels):
+        embedding = tf.math.l2_normalize(embedding, axis=1)
+        embedding*=self.s
+        logits=self.fc(embedding)
+        return logits
+
+
+#Additive Margin Softmax was proposed by paper(https://arxiv.org/abs/1801.05599)
+class AMSoftmaxLinear(layers.Layer):
+    def __init__(self, units, input_dim, margin, feature_scale=64):
+        super(AMSoftmaxLinear, self).__init__()
+        self.m = margin  
+        self.weight = self.add_weight(shape=(input_dim, units),
+                                      initializer='he_normal',
+                                      trainable=True)
+        self.s = feature_scale
+
+    def __call__(self, embedding, labels):
+        x, w = embedding, self.weight
+        w = tf.math.l2_normalize(w, axis=0)
+        x = tf.math.l2_normalize(x, axis=1)
+        logits = tf.matmul(x, w)
+        indices_m = tf.expand_dims(tf.Variable(range(embedding.shape[0])), axis=1)
+        indices_n = tf.expand_dims(labels, axis=1)
+        indices = tf.concat([indices_m, indices_n], 1)
+        selected_logits = tf.gather_nd(logits, indices)
+        logit_target_updated = self.s*(selected_logits-self.m)
+        logits = tf.tensor_scatter_nd_update(logits, indices, logit_target_updated)
+        return logits
+
+    
+#ArcFace was proposed by paper(https://arxiv.org/abs/1801.07698)
+class ArcFaceSoftmaxLinear(layers.Layer):
+    def __init__(self, units, input_dim, margin, feature_scale=64):
+        super(ArcFaceSoftmaxLinear, self).__init__()
+        self.m = margin  # m
+        self.s = feature_scale
+        self.cos_m = tf.math.cos(self.m)
+        self.sin_m = tf.math.sin(self.m)
+        self.threshold = tf.math.cos(math.pi-self.m)
+        self.weight = self.add_weight(shape=(input_dim, units),
+                                      initializer='he_normal',
+                                      trainable=True)
+
+    def __call__(self, embedding, labels):
+        x, w = embedding, self.weight
+        w = tf.math.l2_normalize(w, axis=0)
+        x = tf.math.l2_normalize(x, axis=1)
+        logits = tf.matmul(x, w)
+        indices_m = tf.expand_dims(tf.Variable(range(embedding.shape[0])), axis=1)
+        
+        indices_n = tf.expand_dims(labels, axis=1)
+        
+        indices_m = tf.cast(indices_m,dtype = indices_n.dtype)
+        
+        indices = tf.concat([indices_m, indices_n], 1)
+        selected_logits = tf.gather_nd(logits, indices)
+        cos_theta = selected_logits
+        sin_theta = tf.math.sqrt((1.0-tf.math.square(cos_theta)))
+        logit_target = self.s * (cos_theta*self.cos_m-sin_theta*self.sin_m)
+        keep_val = self.s*(cos_theta - self.m*self.sin_m)
+        logit_target_updated = tf.where(cos_theta > self.threshold, logit_target, keep_val)
+        logit_target_updated = self.s*(selected_logits-self.m)
+        logits = tf.tensor_scatter_nd_update(logits, indices, logit_target_updated)
+        return logits
+
+
+
+
+
+if __name__=="__main__":
+    Loss=LSoftmaxLinear(5,10,3)
+    init = tf.random_normal_initializer()
+    input=tf.Variable(initial_value=init(shape=(8, 10),dtype='float32'))
+    target=tf.Variable(initial_value=[0,1,1,3,4,2,0,4])
+    a=Loss(input,target)
+    print(a)

@@ -11,7 +11,7 @@ from src.loss   import batch_all_triplet_loss, batch_hard_triplet_loss
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
@@ -54,6 +54,7 @@ class Trainer():
 
         for _, (images, labels) in pbar(enumerate(self.dataset)):
             loss = self.train_step(images, labels)
+            break
             total_loss += loss
             
             with self.train_summary_writer.as_default():
@@ -87,7 +88,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2',
+    parser.add_argument('--data_dir', default='/root/shared_folder/Harish/Facenet/data/',
                         help="Directory containing the dataset")
     parser.add_argument('--ckpt_dir', default='/root/shared_folder/Harish/Facenet-x/.tf_ckpt/',
                         help="Directory containing the Checkpoints")
@@ -101,3 +102,4 @@ if __name__ == '__main__':
     
     for i in range(20):
         trainer.train(i)
+        break
