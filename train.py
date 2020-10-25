@@ -7,24 +7,28 @@ from progressbar import *
 from src.params import Params
 from src.model  import face_model
 from src.data   import get_dataset
-from src.loss   import batch_all_triplet_loss, batch_hard_triplet_loss
+from src.triplet_loss import batch_all_triplet_loss, batch_hard_triplet_loss
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 
 class Trainer():
     
-    def __init__(self, json_path, data_dir, ckpt_dir, log_dir, restore):
+    def __init__(self, json_path, data_dir, validate, ckpt_dir, log_dir, restore):
+        
         self.params      = Params(json_path)
+        self.valid       = 1 if validate == '1' else 0
         self.model       = face_model(self.params)
+        
         self.lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(self.params.learning_rate,
                                                                           decay_steps=10000, decay_rate=0.96, staircase=True)
         self.optimizer   = tf.keras.optimizers.Adam(learning_rate=self.lr_schedule, beta_1=0.9, beta_2=0.999, epsilon=0.1)
-        self.checkpoint  = tf.train.Checkpoint(model=self.model, optimizer=self.model, steps=tf.Variable(0,dtype=tf.int64),
-                                               epoch=tf.Variable(0, dtype=tf.int64), loss=tf.Variable(.0, dtype=tf.float32))
+        
+        self.checkpoint  = tf.train.Checkpoint(model=self.model, optimizer=self.optimizer, train_steps=tf.Variable(0,dtype=tf.int64),
+                                               valid_steps=tf.Variable(0,dtype=tf.int64), epoch=tf.Variable(0, dtype=tf.int64))
         self.ckptmanager = tf.train.CheckpointManager(self.checkpoint, ckpt_dir, 3)
         
         if self.params.triplet_strategy == "batch_all":
@@ -44,34 +48,65 @@ class Trainer():
         else:
             print('Intializing from scratch\n')
             
-        self.dataset, self.nrof_samples = get_dataset(data_dir, self.params)
+        self.train_dataset, self.train_samples = get_dataset(data_dir, self.params, 'train')
         
+        if self.valid:
+            self.valid_dataset, self.valid_samples = get_dataset(data_dir, self.params, 'val')
+        
+        
+    def __call__(self, epoch):
+        
+        for i in range(epoch):
+            self.train(i)
+            if self.valid:
+                self.validate(i)
+
         
     def train(self, epoch):
-        widgets = [f'epoch {epoch} :', Percentage(), ' ', Bar('#'), ' ',Timer(), ' ', ETA(), ' ']
-        pbar = ProgressBar(widgets=widgets, max_value=int(self.nrof_samples//self.params.batch_size)+1).start()
+        widgets = [f'Train epoch {epoch} :', Percentage(), ' ', Bar('#'), ' ',Timer(), ' ', ETA(), ' ']
+        pbar = ProgressBar(widgets=widgets, max_value=int(self.train_samples // self.params.batch_size) + 20).start()
         total_loss = 0
 
-        for _, (images, labels) in pbar(enumerate(self.dataset)):
+        for i, (images, labels) in pbar(enumerate(self.train_dataset)):
             loss = self.train_step(images, labels)
-            break
             total_loss += loss
             
             with self.train_summary_writer.as_default():
-                tf.summary.scalar('step_loss', loss, step=self.checkpoint.steps)
-            self.checkpoint.steps.assign_add(1)
+                tf.summary.scalar('train_step_loss', loss, step=self.checkpoint.train_steps)
+            self.checkpoint.train_steps.assign_add(1)
         
         with self.train_summary_writer.as_default():
-            tf.summary.scalar('batch_loss', total_loss, step=epoch)
+            tf.summary.scalar('train_batch_loss', total_loss, step=epoch)
         
         self.checkpoint.epoch.assign_add(1)
         if int(self.checkpoint.epoch) % 5 == 0:
             save_path = self.ckptmanager.save()
-            print('\nLoss over epoch {}: {}'.format(epoch, total_loss))
+            print('\nTrain Loss over epoch {}: {}'.format(epoch, total_loss))
             print(f'Saved Checkpoint for step {self.checkpoint.epoch.numpy()} : {save_path}\n')
 
+            
+    def validate(self, epoch):
+        widgets = [f'Valid epoch {epoch} :', Percentage(), ' ', Bar('#'), ' ',Timer(), ' ', ETA(), ' ']
+        pbar = ProgressBar(widgets=widgets, max_value=int(self.valid_samples // self.params.batch_size) + 50).start()
+        total_loss = 0
+
+        for i, (images, labels) in pbar(enumerate(self.valid_dataset)):
+            loss = self.valid_step(images, labels)
+            total_loss += loss
+            
+            with self.train_summary_writer.as_default():
+                tf.summary.scalar('valid_step_loss', loss, step=self.checkpoint.valid_steps)
+            self.checkpoint.valid_steps.assign_add(1)
+        print('\n')
+        with self.train_summary_writer.as_default():
+            tf.summary.scalar('valid_batch_loss', total_loss, step=epoch)
+        
+        if (epoch+1)%5 == 0:
+            print('\nValidation Loss over epoch {}: {}\n'.format(epoch, total_loss)) 
+    
         
     def train_step(self, images, labels):
+        
         with tf.GradientTape() as tape:
             embeddings = self.model(images)
             embeddings = tf.math.l2_normalize(embeddings, axis=1, epsilon=1e-10)
@@ -81,6 +116,15 @@ class Trainer():
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
         
         return loss
+    
+    
+    def valid_step(self, images, labels):
+        
+        embeddings = self.model(images)
+        embeddings = tf.math.l2_normalize(embeddings, axis=1, epsilon=1e-10)
+        loss = self.loss(labels, embeddings, self.params.margin, self.params.squared)
+            
+        return loss
 
 
 if __name__ == '__main__':
@@ -88,8 +132,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Harish/Facenet/data/',
+    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2/',
                         help="Directory containing the dataset")
+    parser.add_argument('--validate', default='0',
+                        help="Is there an validation dataset available")
     parser.add_argument('--ckpt_dir', default='/root/shared_folder/Harish/Facenet-x/.tf_ckpt/',
                         help="Directory containing the Checkpoints")
     parser.add_argument('--log_dir', default='/root/shared_folder/Harish/Facenet-x/.logs/',
@@ -98,8 +144,12 @@ if __name__ == '__main__':
                         help="Restart the model from the previous Checkpoint")
     args = parser.parse_args()
     
-    trainer = Trainer(args.params_dir, args.data_dir, args.ckpt_dir, args.log_dir, args.restore)
+    trainer = Trainer(args.params_dir, args.data_dir, args.validate, args.ckpt_dir, args.log_dir, args.restore)
     
-    for i in range(20):
+    for i in range(10):
         trainer.train(i)
-        break
+
+
+# 1 record - /root/shared_folder/Harish/Facenet/data
+# 10 records - /root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data10faces
+# Complete record - /root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2/
