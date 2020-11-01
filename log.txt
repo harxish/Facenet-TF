@@ -1,3 +1,18 @@
+--- 01 Nov 2020 ---
+
+> Not sure what to do next.
+
+1. Completed Adaptive Loss
+
+
+--- 26 Oct 2020 ---
+
+> Complete Adaptive Loss
+
+1. Adding adaptive loss.
+2. Finished embedding dict.
+
+
 --- 11 Sept 2020 ---
 
 > Check loss.py
