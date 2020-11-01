@@ -7,7 +7,7 @@ from progressbar import *
 from src.params import Params
 from src.model  import face_model
 from src.data   import get_dataset
-from src.triplet_loss import batch_all_triplet_loss, batch_hard_triplet_loss
+from src.triplet_loss import batch_all_triplet_loss, batch_hard_triplet_loss, adapted_triplet_loss
 
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -37,16 +37,19 @@ class Trainer():
         elif self.params.triplet_strategy == "batch_hard":
             self.loss = batch_hard_triplet_loss
             
+        elif self.params.triplet_strategy == "batch_adaptive":
+            self.loss = adapted_triplet_loss
+            
         current_time = datetime.datetime.now().strftime("%d-%m-%Y_%H%M%S")
         log_dir += current_time + '/train/'
         self.train_summary_writer = tf.summary.create_file_writer(log_dir)
             
         if restore == '1':
             self.checkpoint.restore(self.ckptmanager.latest_checkpoint)
-            print(f'Restored from Checkpoint : {self.ckptmanager.latest_checkpoint}\n')
+            print(f'\nRestored from Checkpoint : {self.ckptmanager.latest_checkpoint}\n')
         
         else:
-            print('Intializing from scratch\n')
+            print('\nIntializing from scratch\n')
             
         self.train_dataset, self.train_samples = get_dataset(data_dir, self.params, 'train')
         
@@ -130,9 +133,11 @@ class Trainer():
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-    parser.add_argument('--params_dir', default='hyperparameters/batch_all.json',
+    parser.add_argument('--epoch', default=20, type=int,
+                        help="Number epochs to train the model for")
+    parser.add_argument('--params_dir', default='hyperparameters/batch_adaptive.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2/',
+    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data10faces_aligned_tfrcd',
                         help="Directory containing the dataset")
     parser.add_argument('--validate', default='0',
                         help="Is there an validation dataset available")
@@ -146,10 +151,10 @@ if __name__ == '__main__':
     
     trainer = Trainer(args.params_dir, args.data_dir, args.validate, args.ckpt_dir, args.log_dir, args.restore)
     
-    for i in range(10):
+    for i in range(args.epoch):
         trainer.train(i)
 
 
 # 1 record - /root/shared_folder/Harish/Facenet/data
-# 10 records - /root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data10faces
+# 10 records - /root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data10faces_aligned_tfrcd
 # Complete record - /root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data2/
