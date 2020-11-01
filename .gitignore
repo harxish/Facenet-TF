@@ -4,3 +4,4 @@ src/.ipynb_checkpoints/
 src/__pycache__/
 .*
 !.gitignore
+src/testing.ipynb
