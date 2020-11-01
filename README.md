@@ -1,20 +1,31 @@
 # Facenet-TF
 Facenet implementation using Tensorflow 2.x
 
-### Repo Structure
+Using Inception - V3 to find the n-dimensional embeddings which could represent a face such that it is distinguishable from faces of other people. Triplet loss is used to **minimise the intra-class variance** and **increase the inter-class vairance**. Three variations of triplet losses are used which can be found at `src/triplet_loss.py`.
 
-1. __train.py__      : Creates a trainer object for maintaing checkpoints, logs, train loop and args.
-2. __src/data.py__   : Creates tf.data.dataset from tfrecords in the specified directory.
-3. __src/loss.py__   : Loss functions and loss utility functions for for triplet loss.
-4. __src/model.py__  : Creates model class which gives embeddings from a image.
-5. __src/params.py__ : Creates paramters class from a json in the hyperparameters directory.
+- `Triplet Loss` : A straight-forward procedure which finds triplets by iterating through all triplets formed.
+- `Hard Triplet Loss` : A procedure which chooses triplet pairs such that distance b/w -ve and anchor is less and the distance b/w anchor and +ve is more.
+- `Adaptive Triplet Loss` : The main idea to correct the triplet selection bias, so we try to minize the distribution shift between the batch and the tripet set.
 
-### Code
+## Code Organization
+
+1. `train.py`           : Creates a trainer object for maintaing checkpoints, logs, train loop and args.
+2. `src/data.py`        : Creates tf.data.dataset from tfrecords in the specified directory.
+3. `src/model.py`       : Creates model class which gives embeddings from a image.
+4. `src/params.py`      : Creates paramters class from a json in the hyperparameters directory.
+5. `src/triplet_loss.py`: Loss functions and loss utility functions for for triplet loss.
+
+### How to run
 
 Train from scratch
 ```
 python train.py --params_dir ./hyperparameters/batch_all.json --data_dir ./data/ 
                 --log_dir ./.logs/ --ckpt_dir ./.ckpt/ --restore 0
+```
+
+Restore from previous checkpoint
+```
+python train.py --params_dir --restore 1
 ```
 
 ### Acknowlegments
@@ -24,14 +35,14 @@ python train.py --params_dir ./hyperparameters/batch_all.json --data_dir ./data/
 
 ### References
 
-    @article{Schroff_2015,
-       title={FaceNet: A unified embedding for face recognition and clustering},
-       ISBN={9781467369640},
-       url={http://dx.doi.org/10.1109/CVPR.2015.7298682},
-       DOI={10.1109/cvpr.2015.7298682},
-       journal={2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-       publisher={IEEE},
-       author={Schroff, Florian and Kalenichenko, Dmitry and Philbin, James},
-       year={2015},
-       month={Jun}
-    }
+```
+F. Schroff, D. Kalenichenko and J. Philbin, "FaceNet: A unified embedding for face recognition and clustering,
+" 2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR), Boston, MA, 2015, 
+pp. 815-823, doi: 10.1109/CVPR.2015.7298682.
+```
+
+```
+Yu B., Liu T., Gong M., Ding C., Tao D. (2018) Correcting the Triplet Selection Bias for Triplet Loss. 
+In: Ferrari V., Hebert M., Sminchisescu C., Weiss Y. (eds) Computer Vision – ECCV 2018. ECCV 2018. 
+Lecture Notes in Computer Science, vol 11210. Springer, Cham. https://doi.org/10.1007/978-3-030-01231-1_5
+```
