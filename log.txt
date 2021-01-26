@@ -1,6 +1,6 @@
 --- 01 Nov 2020 ---
 
-> Not sure what to do next.
+> Change Data Pipeline
 
 1. Completed Adaptive Loss
 
