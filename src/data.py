@@ -1,13 +1,13 @@
 import os
 import numpy as np
-import pandas as pd
+# import pandas as pd
 import tensorflow as tf
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+# tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 '''
-Create tf.data.Dataset from TFRecords from a directory of TFRecords.
+Create tf.data.Dataset from a directory of Images.
 Preprocess Images : Resize, Flip, Normalize
 '''
 
@@ -20,37 +20,34 @@ def preprocess_image(image, image_size):
     return image
 
 
-def parse_image_function(example_proto, image_size):
-    
-    image_feature_description = {
-        'image_shape': tf.io.FixedLenFeature(shape=[3, ], dtype=tf.int64),
-        'id': tf.io.FixedLenFeature(shape=[], dtype=tf.int64),
-        'image_raw': tf.io.FixedLenFeature(shape=[], dtype=tf.string),
-    }
-    
-    parsed_example = tf.io.parse_single_example(example_proto, image_feature_description)
-    image_string = parsed_example['image_raw']
+def parse_image_function(image_path, label, image_size):
+      
+    image_string = tf.io.read_file(image_path)
     image = tf.image.decode_jpeg(image_string, channels=3)
     image = preprocess_image(image, image_size)
-    label = parsed_example['id']
     return image, label
 
 
-def get_dataset(tfrcd_dir, params, phase='train'):
-    
-    if phase == 'train':
-        df = pd.read_csv(os.path.join(tfrcd_dir,'info.csv'))
-        nrof_samples = df['train_num'][0]
-        
-    elif phase == 'val':
-        df = pd.read_csv(os.path.join(tfrcd_dir,'info.csv'))
-        nrof_samples = df['val_num'][0]
-      
-    file_paths =  os.listdir(os.path.join(tfrcd_dir, phase))
-    file_paths =  [os.path.join(tfrcd_dir, phase, file_path)for file_path in file_paths]
+def get_dataset(dir, params, phase='train'):
+
+    dir_paths  =  os.listdir(dir)
+    dir_paths  =  [os.path.join(dir, dir_path) for dir_path in dir_paths]
+
+    image_paths = []
+    image_label = []
+    for dir_path in dir_paths:
+        for image_path in os.listdir(dir_path):
+            image_paths.append(os.path.join(dir_path, image_path))
+            image_label.append(int(dir_path.split('/')[-1][1:]))
+
     AUTOTUNE   =  tf.data.experimental.AUTOTUNE
-    dataset    =  tf.data.TFRecordDataset(file_paths)
-    dataset    =  dataset.map(lambda x: parse_image_function(x, params.image_size))
+    dataset    =  tf.data.Dataset.from_tensor_slices((image_paths, image_label))
+    dataset    =  dataset.map(lambda x, y: parse_image_function(x, y, params.image_size))
     dataset    =  dataset.batch(params.batch_size).prefetch(AUTOTUNE)
     
-    return dataset, nrof_samples
+    return dataset, len(image_paths)
+
+
+if __name__ == "__main__":
+
+    print(get_dataset('../face-data'))

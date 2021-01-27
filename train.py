@@ -137,13 +137,13 @@ if __name__ == '__main__':
                         help="Number epochs to train the model for")
     parser.add_argument('--params_dir', default='hyperparameters/batch_adaptive.json',
                         help="Experiment directory containing params.json")
-    parser.add_argument('--data_dir', default='/root/shared_folder/Amaan/face/FaceNet-and-FaceLoss-collections-tensorflow2.0/data10faces_aligned_tfrcd',
+    parser.add_argument('--data_dir', default='../face-data/',
                         help="Directory containing the dataset")
     parser.add_argument('--validate', default='0',
                         help="Is there an validation dataset available")
-    parser.add_argument('--ckpt_dir', default='/root/shared_folder/Harish/Facenet-x/.tf_ckpt/',
+    parser.add_argument('--ckpt_dir', default='.tf_ckpt/',
                         help="Directory containing the Checkpoints")
-    parser.add_argument('--log_dir', default='/root/shared_folder/Harish/Facenet-x/.logs/',
+    parser.add_argument('--log_dir', default='.logs/',
                         help="Directory containing the Logs")
     parser.add_argument('--restore', default='0',
                         help="Restart the model from the previous Checkpoint")
