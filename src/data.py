@@ -38,7 +38,7 @@ def get_dataset(dir, params, phase='train'):
     for dir_path in dir_paths:
         for image_path in os.listdir(dir_path):
             image_paths.append(os.path.join(dir_path, image_path))
-            image_label.append(int(dir_path.split('/')[-1][1:]))
+            image_label.append(dir_path.split('/')[-1])
 
     AUTOTUNE   =  tf.data.experimental.AUTOTUNE
     dataset    =  tf.data.Dataset.from_tensor_slices((image_paths, image_label))
